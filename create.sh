@@ -1,6 +1,6 @@
 #!/bin/bash
 
-kernelDir=/home/development/Desktop/Raspberry/kernel/linux
+kernelDir=/home/development/Desktop/Raspberry/kernel_5.10.92
 #kernelDir=/home/development/Desktop/Raspberry/kernel/kernel_openplotter
 targetDir=/tftpboot/rootfs/home/pi/naviDev
 

@@ -2097,16 +2097,28 @@ static int moitessier_tty_write(struct tty_struct *tty, const unsigned char *buf
 	return count;
 }
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION_ALT(5, 13, 0)
 static int moitessier_tty_write_room(struct tty_struct *tty) 
+#else
+static unsigned int moitessier_tty_write_room(struct tty_struct *tty)    
+#endif /* LINUX_VERSION_CODE */
 {
 	struct st_moitessierSpi_serial *serial = tty->driver_data;
+#if LINUX_VERSION_CODE < KERNEL_VERSION_ALT(5, 13, 0)	
 	int room = -EINVAL;
+#else
+    unsigned int room = 0;
+#endif /* LINUX_VERSION_CODE */	
 
     if(DEBUG_LEVEL >= LEVEL_DEBUG || DEBUG_LEVEL == LEVEL_DEBUG_TTY)
         pr_info("%s\n", __func__);
 
 	if (!serial)
+#if LINUX_VERSION_CODE < KERNEL_VERSION_ALT(5, 13, 0)	    
 		return -ENODEV;
+#else
+        return 0;
+#endif /* LINUX_VERSION_CODE */        		
 
 	mutex_lock(&serial->lock);
 
@@ -2269,7 +2281,11 @@ static int __init moitessier_init(void)
 
 #if defined(USE_TTY)
     /* allocate the tty driver */
+#if LINUX_VERSION_CODE < KERNEL_VERSION_ALT(5, 13, 0)    
 	moitessier_tty_driver = alloc_tty_driver(1);
+#else 
+    moitessier_tty_driver = tty_alloc_driver(1, 0);
+#endif	
 	if (!moitessier_tty_driver)
 	{
 	    if(DEBUG_LEVEL >= LEVEL_CRITICAL || DEBUG_LEVEL == LEVEL_DEBUG_TTY)
@@ -2491,8 +2507,12 @@ free_tty_mem:
 	}
 #endif /* USE_TTY */	
 free_tty:
-#if defined(USE_TTY)      
+#if defined(USE_TTY)
+#if LINUX_VERSION_CODE < KERNEL_VERSION_ALT(5, 13, 0)          
     put_tty_driver(moitessier_tty_driver);    
+#else
+    tty_driver_kref_put(moitessier_tty_driver);
+#endif /* LINUX_VERSION_CODE */    
 #endif /* USE_TTY */ 	    
 free_class:
     moitessier_spi_class->dev_uevent = NULL;
@@ -2557,7 +2577,11 @@ static void __exit moitessier_exit(void)
 
     tty_unregister_device(moitessier_tty_driver, 0);
     tty_unregister_driver(moitessier_tty_driver);
-	put_tty_driver(moitessier_tty_driver); 
+#if LINUX_VERSION_CODE < KERNEL_VERSION_ALT(5, 13, 0)          
+    put_tty_driver(moitessier_tty_driver);    
+#else
+    tty_driver_kref_put(moitessier_tty_driver);
+#endif /* LINUX_VERSION_CODE */    
 	if(moitessier_serial)
 	{
 	    if(moitessier_serial->tty)
