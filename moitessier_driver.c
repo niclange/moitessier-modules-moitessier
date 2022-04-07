@@ -443,7 +443,11 @@ struct st_fifo{
     unsigned char           data[FIFO_SIZE];        /* data memory of the FIFO */
     unsigned int            size;                   /* the size of the FIFO */
     unsigned int            cnt;                    /* number of bytes currently stored in the FIFO */
+#if !defined(CONFIG_ARM64)    
     spinlock_t              spinlock;
+#else    
+    struct mutex	        lock;                   
+#endif /* CONFIG_ARM64 */    
 };
 
 #if defined(USE_TTY)
@@ -625,7 +629,19 @@ static ssize_t moitessier_read(struct file *filp, char __user *buf, size_t maxBy
     spin_unlock_irq(&dev->spinlock);
 #endif /* !USE_TTY */		
 
+    /* On a 64 bit kernel the spin lock causes a "bad address" error when reading the SPI device file.
+       Currently it is not exactly known why this issue exists at all.
+       The rxFifo is not used in the interrupt context, so a mutex can be used instead anyway.
+    */
+#if !defined(CONFIG_ARM64)
 	spin_lock_irq(&rxFifo.spinlock);
+#else 	
+	if (mutex_lock_interruptible(&rxFifo.lock))
+    {
+        return -1;
+    }
+#endif /* CONFIG_ARM64 */
+	
 	to_copy = min(rxFifo.cnt, maxBytesToRead);
 	not_copied = copy_to_user(buf, rxFifo.data, to_copy);
 	
@@ -645,7 +661,12 @@ static ssize_t moitessier_read(struct file *filp, char __user *buf, size_t maxBy
 	{ 
 	    rxFifo.cnt = 0;
 	}
+	
+#if !defined(CONFIG_ARM64)
 	spin_unlock_irq(&rxFifo.spinlock);
+#else 	
+	mutex_unlock(&rxFifo.lock);
+#endif /* CONFIG_ARM64 */	
 	
 	if(DEBUG_LEVEL >= LEVEL_DEBUG || DEBUG_LEVEL == LEVEL_DEBUG_SPI)
 	    pr_info("%s - bytes read: %d\n", __func__, to_copy);
@@ -1117,7 +1138,9 @@ void moitessier_processReqData(void)
     if(!moitessier_spi->initialized)
         return;
         
+#if !defined(CONFIG_ARM64)    
     spin_lock_irq(&moitessier_spi->spinlock);
+#endif /* CONFIG_ARM64 */
     
     /* read data from the SPI interface */
     //moitessier_receiveSpiData(moitessier_spi, BUF_SIZE);
@@ -1221,7 +1244,6 @@ void moitessier_processReqData(void)
     
     /* start SPI transmission */
     moitessier_transmitSpiData(moitessier_spi, NULL, BUF_SIZE, true);
-    
     
 #if defined(USE_STATISTICS)    
     spin_lock_irq(&statistics.spinlock);
@@ -1430,7 +1452,7 @@ void moitessier_processReqData(void)
         
         if(DEBUG_LEVEL >= LEVEL_DEBUG)
         {
-            msg = kmalloc(header.payloadLen + 1, GFP_KERNEL);
+            msg = kmalloc(header.payloadLen + 1, GFP_ATOMIC);
             if(msg)
             {
                 memcpy(msg, &moitessier_spi->rxBuf[headerPos + HEADER_size()], header.payloadLen);
@@ -1502,9 +1524,13 @@ void moitessier_processReqData(void)
         if(moitessier_spi->opened)
         {
             fifoFull = false;
-            
+
+#if !defined(CONFIG_ARM64)            
             spin_lock_irq(&rxFifo.spinlock);
-    
+#else
+            mutex_lock(&rxFifo.lock);
+#endif /* CONFIG_ARM64 */
+        
             /* still space left in FIFO? */
             if((rxFifo.cnt + header.payloadLen) > rxFifo.size)
             {
@@ -1528,8 +1554,11 @@ void moitessier_processReqData(void)
                 dataProcessed = true;
             }
             
+#if !defined(CONFIG_ARM64)            
             spin_unlock_irq(&rxFifo.spinlock);
-            
+#else
+            mutex_unlock(&rxFifo.lock);
+#endif /* CONFIG_ARM64 */            
             if(DEBUG_LEVEL >= LEVEL_DEBUG || DEBUG_LEVEL == LEVEL_DEBUG_SPI)
             {
                 pr_info("%s - FIFO cnt: %u", __func__, rxFifo.cnt);
@@ -1585,7 +1614,9 @@ moitessier_processReqData_exit:
     if(dataProcessed)
         SET_DATA_AVAILABLE_USER;
 
+#if !defined(CONFIG_ARM64)
     spin_unlock_irq(&moitessier_spi->spinlock);
+#endif /* CONFIG_ARM64 */
     
     if(dataProcessed)
         wake_up_interruptible(&wq_read);
@@ -1610,7 +1641,7 @@ static int moitessier_thread(void *data)
         if(moitessier_spi->initialized)
         {
             moitessier_processReqData();
-        
+            
 #if defined(SUPPORT_SHUTDOWN)        
             if(info.buttonPressed && (USE_SHUTDOWN_BUTTON || TEST_MODE_SHUTDOWN_BUTTON))
             {
@@ -1695,7 +1726,7 @@ static void irq_tasklet(unsigned long data)
         {
             gpio_set_value(moitessier_spi->req_gpio[i].gpio, REQ_LEVEL_ACTIVE);
             SLAVE_REQ_RECEIVED;
-#if defined(USE_THREAD)            
+#if defined(USE_THREAD)    
             wake_up_interruptible(&wq_thread);
 #else /* !USE_THREAD */                       
             spin_unlock(&moitessier_spi->spinlock); 
@@ -2214,12 +2245,17 @@ static int __init moitessier_init(void)
     
     if(DEBUG_LEVEL >= LEVEL_INFO)
         pr_info("%s\n", __func__);
+        
+#if defined(CONFIG_ARM64)        
+    if(DEBUG_LEVEL >= LEVEL_INFO)
+        pr_info("%s - running 64 bit kernel\n", __func__);        
+#endif /* CONFIG_ARM64 */        
 
 #if defined(USE_TTY)	
 	moitessier_serial = NULL;
-#endif /* USE_TTY */	
-	
-	/* Memory allocation must be done at this point. If SPI is not enabled the probe(...) function will not
+#endif /* USE_TTY */
+
+    /* Memory allocation must be done at this point. If SPI is not enabled the probe(...) function will not
 	   be called and we will get a segmentation fault later in this function when we try to access moitessier_spi. */
 	moitessier_spi = kzalloc(sizeof(*moitessier_spi), GFP_KERNEL);
 	if (!moitessier_spi)
@@ -2412,7 +2448,11 @@ static int __init moitessier_init(void)
 	SLAVE_REQ_CONFIRMED;
 
     spin_lock_init(&moitessier_spi->spinlock);
+#if !defined(CONFIG_ARM64)    
     spin_lock_init(&rxFifo.spinlock);
+#else    
+    mutex_init(&rxFifo.lock);
+#endif /* CONFIG_ARM64 */    
 #if defined(USE_STATISTICS)    
     spin_lock_init(&statistics.spinlock);
 #endif /* USE_STATISTICS */     
