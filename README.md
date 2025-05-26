@@ -23,3 +23,8 @@ Usage
 raspi> echo /dev/moitessier.tty
 or
 raspi> echo /dev/moitessier.spi
+
+Other
+------
+You may need build rasberry kernel if you don't use a raspberry to build it (CROSS_COMPILE) use this documentation :
+https://www.raspberrypi.com/documentation/computers/linux_kernel.html
