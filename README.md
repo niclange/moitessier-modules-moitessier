@@ -11,7 +11,7 @@ Installation
 ------------
 
 1.  Compile the driver. Pass ARCH and CROSS_COMPILE options to make command. For example:
-        host> make ARCH=arm CROSS_COMPILE=arm-linux-gnueabihf- all KDIR=<PATH_TO_KERNEL_SRC>
+        host> make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- KDIR=<PATH_TO_KERNEL_SRC>
 
 3.  Load resulting moitessier.ko module:
         raspi> sudo insmod moitessier.ko
