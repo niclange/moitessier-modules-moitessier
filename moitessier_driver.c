@@ -168,7 +168,7 @@
 #include <asm/uaccess.h>  
 #include <linux/moduleparam.h>
 #include <linux/delay.h>
-#include <stddef.h>
+#include <linux/stddef.h>
 #include <linux/reboot.h>
 
 #include <linux/version.h>
@@ -1685,7 +1685,8 @@ static int moitessier_thread(void *data)
         }     
     }
     
-    complete_and_exit(&on_exit, 0);
+    complete(&on_exit);
+    return 0;
 }
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION_ALT(5, 9, 0)
@@ -1988,11 +1989,11 @@ free_memory:
     return -EIO;          
 }
 
-static int moitessier_remove(struct spi_device *spi)
+static void moitessier_remove(struct spi_device *spi)
 {
     if(DEBUG_LEVEL >= LEVEL_DEBUG || DEBUG_LEVEL == LEVEL_DEBUG_SPI)
 	    pr_info("%s\n", __func__);
-	return 0;
+	return ;
 }
 
 static struct spi_driver moitessier_spi_driver = {
@@ -2161,7 +2162,7 @@ static unsigned int moitessier_tty_write_room(struct tty_struct *tty)
 	return room;
 }
 
-static void moitessier_tty_set_termios(struct tty_struct *tty, struct ktermios *old_termios)
+static void moitessier_tty_set_termios(struct tty_struct *tty, const  struct ktermios *old_termios)
 {
     if(DEBUG_LEVEL >= LEVEL_DEBUG || DEBUG_LEVEL == LEVEL_DEBUG_TTY)
         pr_info("%s\n", __func__);    
